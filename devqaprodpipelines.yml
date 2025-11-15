@@ -1,0 +1,155 @@
+trigger:
+  branches:
+    include:
+      - develop  # ✅ Auto-runs on `develop` (Dev)
+      - qa       # ✅ Auto-runs on `qa` (QA)
+      - main     # ✅ Auto-runs on `main` (Prod)
+
+variables:
+  environmentDir: '$(System.DefaultWorkingDirectory)/Environment'
+  DEPLOY_ENV: $[ coalesce(variables['Build.SourceBranchName'], 'develop') ]  # ✅ Dynamically picks env
+  TF_VAR_FILE: '$(DEPLOY_ENV).terraform.tfvars'  # ✅ Picks correct tfvars file
+
+pool: Todo
+
+stages:
+# =================== DEV ENVIRONMENT ===================
+- stage: DeployDev
+  displayName: "Deploy to Dev"
+  condition: eq(variables['Build.SourceBranch'], 'refs/heads/develop')
+  jobs:
+  - job: TerraformSecurityScan
+    displayName: "Terraform Security Check"
+    steps:
+    - task: tfsec@1
+      displayName: "Running tfsec Security Scan"
+      inputs:
+        version: 'latest'
+
+  - deployment: DeployToDev
+    displayName: "Terraform Init & Apply (Dev)"
+    environment: DevEnv  # ✅ No manual approval needed
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: TerraformInstaller@1
+            displayName: "Install Terraform"
+            inputs:
+              terraformVersion: 'latest'
+
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Init"
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              workingDirectory: '$(environmentDir)'
+              backendServiceArm: 'Taskflare'
+              backendAzureRmResourceGroupName: 'tfstate-rg'
+              backendAzureRmStorageAccountName: 'tfstateaccount'
+              backendAzureRmContainerName: 'tfstatecontainer'
+              backendAzureRmKey: '$(DEPLOY_ENV).terraform.tfstate'
+
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Plan"
+            inputs:
+              provider: 'azurerm'
+              command: 'plan'
+              workingDirectory: '$(environmentDir)'
+              commandOptions: '-var-file=$(TF_VAR_FILE)'
+              environmentServiceNameAzureRM: 'Taskflare'
+
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Apply"
+            inputs:
+              provider: 'azurerm'
+              command: 'apply'
+              workingDirectory: '$(environmentDir)'
+              commandOptions: '-auto-approve -var-file=$(TF_VAR_FILE)'
+              environmentServiceNameAzureRM: 'Taskflare'
+
+# =================== QA ENVIRONMENT ===================
+- stage: DeployQA
+  displayName: "Deploy to QA"
+  condition: eq(variables['Build.SourceBranch'], 'refs/heads/qa')
+  jobs:
+  - job: ManualApprovalQA
+    displayName: "Manual Approval Before QA Deploy"
+    pool: server
+    steps:
+    - task: ManualValidation@1
+      inputs:
+        notifyUsers: 'qa-approver@example.com'
+        instructions: 'Approve QA deployment'
+        timeoutInMinutes: 60  # Waits for 60 min
+
+  - deployment: DeployToQA
+    displayName: "Terraform Init & Apply (QA)"
+    environment: QaEnv  # ✅ Needs manual approval
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Init"
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              workingDirectory: '$(environmentDir)'
+              backendServiceArm: 'Taskflare'
+              backendAzureRmResourceGroupName: 'tfstate-rg'
+              backendAzureRmStorageAccountName: 'tfstateaccount'
+              backendAzureRmContainerName: 'tfstatecontainer'
+              backendAzureRmKey: '$(DEPLOY_ENV).terraform.tfstate'
+
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Apply"
+            inputs:
+              provider: 'azurerm'
+              command: 'apply'
+              workingDirectory: '$(environmentDir)'
+              commandOptions: '-auto-approve -var-file=$(TF_VAR_FILE)'
+              environmentServiceNameAzureRM: 'Taskflare'
+
+# =================== PROD ENVIRONMENT ===================
+- stage: DeployProd
+  displayName: "Deploy to Prod"
+  condition: eq(variables['Build.SourceBranch'], 'refs/heads/main')
+  jobs:
+  - job: ManualApprovalProd
+    displayName: "Manual Approval Before Prod Deploy"
+    pool: server
+    steps:
+    - task: ManualValidation@1
+      inputs:
+        notifyUsers: 'prod-approver@example.com'
+        instructions: 'Approve Production deployment'
+        timeoutInMinutes: 120  # Waits for 2 hours
+
+  - deployment: DeployToProd
+    displayName: "Terraform Init & Apply (Prod)"
+    environment: ProdEnv  # ✅ Needs manual approval
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Init"
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              workingDirectory: '$(environmentDir)'
+              backendServiceArm: 'Taskflare'
+              backendAzureRmResourceGroupName: 'tfstate-rg'
+              backendAzureRmStorageAccountName: 'tfstateaccount'
+              backendAzureRmContainerName: 'tfstatecontainer'
+              backendAzureRmKey: '$(DEPLOY_ENV).terraform.tfstate'
+
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Apply"
+            inputs:
+              provider: 'azurerm'
+              command: 'apply'
+              workingDirectory: '$(environmentDir)'
+              commandOptions: '-auto-approve -var-file=$(TF_VAR_FILE)'
+              environmentServiceNameAzureRM: 'Taskflare'

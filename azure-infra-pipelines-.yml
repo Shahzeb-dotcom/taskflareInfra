@@ -1,0 +1,101 @@
+trigger:
+- main
+
+pool: mac-pool
+
+stages:
+# ------------------ Stage 1: Lint & Security ------------------
+- stage: Terraform_Validation
+  displayName: "Terraform Lint & Security"
+  jobs:
+  - job: validate
+    steps:
+    - task: TerraformInstaller@1
+      displayName: "Install Terraform"
+      inputs:
+        terraformVersion: 'latest'
+
+    - task: tfsec@1
+      displayName: "Run tfsec"
+      inputs:
+        version: 'v1.26.0'
+
+    - script: |
+        pip install checkov
+        checkov -d $(System.DefaultWorkingDirectory)/Environment/dev || true
+      displayName: "Checkov Scan (non-Blocking)"
+
+# ------------------ Stage 2: Init, Validate, Plan ------------------
+- stage: Terraform_Init_Validate_Plan
+  displayName: "Terraform Init, Validate & Plan"
+  jobs:
+  - job: initplan
+    steps:
+    - task: TerraformTask@5
+      displayName: "Terraform Init"
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/Environment/dev'
+        backendServiceArm: 'ADOToAZServiceconnection'
+        backendAzureRmStorageAccountName: 'shreekrupa'
+        backendAzureRmContainerName: 'stgcontainer'
+        backendAzureRmKey: 'terraform.tfstate'
+
+    - task: TerraformTask@5
+      displayName: "Terraform Validate"
+      inputs:
+        provider: 'azurerm'
+        command: 'validate'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/Environment/dev'
+
+    - task: TerraformTask@5
+      displayName: "Terraform Plan"
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/Environment/dev'
+        commandOptions: '-out=tfplan'
+        environmentServiceNameAzureRM: 'ADOToAZServiceconnection'
+
+    - task: PublishPipelineArtifact@1
+      displayName: "Publish Plan Artifact"
+      inputs:
+        targetPath: '$(System.DefaultWorkingDirectory)/Environment/dev/tfplan'
+        artifact: 'terraform-plan-artifact'
+        publishLocation: 'pipeline'
+
+# ------------------ Stage 3: Manual Approval ------------------
+- stage: Manual_Approval
+  displayName: "Manual Approval Before Apply"
+  dependsOn: Terraform_Init_Validate_Plan
+  jobs:
+  - job: manual
+    pool: server
+    steps:
+    - task: ManualValidation@1
+      inputs:
+        notifyUsers: 'ab@gmail.com'
+
+# ------------------ Stage 4: Terraform Apply ------------------
+- stage: Terraform_Apply
+  displayName: "Terraform Apply"
+  dependsOn: Manual_Approval
+  jobs:
+  - job: apply
+    steps:
+    - task: DownloadPipelineArtifact@2
+      displayName: "Download Plan Artifact"
+      inputs:
+        buildType: 'current'
+        artifactName: 'terraform-plan-artifact'
+        targetPath: '$(System.DefaultWorkingDirectory)/Environment/dev'
+
+    - task: TerraformTask@5
+      displayName: "Terraform Apply"
+      inputs:
+        provider: 'azurerm'
+        command: 'apply'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/Environment/dev'
+        commandOptions: 'tfplan'
+        environmentServiceNameAzureRM: 'ADOToAZServiceconnection'
