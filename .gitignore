@@ -1,0 +1,60 @@
+# Terraform filesgit add
+*.tfstate
+*.tfstate.*
+*.tfvars
+tfplan.binary
+plan.json
+.terraform/
+.terraform.lock.hcl
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+venv/
+env/
+.env
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Logs
+*.log
+logs/
+
+# Sensitive files
+*.key
+*.pem
+security.txt
+secrets.yaml
+.env.local
+credentials.json
+
+# Build artifacts
+*.tar.gz
+*.zip
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
